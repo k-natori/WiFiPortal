@@ -1,0 +1,28 @@
+{
+  "name": "WifiPortal",
+  "version": "0.1.0",
+  "description": "Simple captive portal style WiFi configuration library for ESP32",
+  "keywords": [
+    "esp32",
+    "wifi",
+    "captive-portal",
+    "webserver",
+    "provisioning"
+  ],
+  "authors": [
+    {
+      "name": "k-natori",
+      "maintainer": true
+    }
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/k-natori/WifiPortal.git"
+  },
+  "frameworks": ["arduino"],
+  "platforms": ["espressif32"],
+  "headers": [
+    "WifiPortal.h"
+  ]
+}
