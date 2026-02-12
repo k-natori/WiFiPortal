@@ -1,5 +1,7 @@
 #include <Arduino.h>
 #include <vector>
+#include <WebServer.h>
+#include <DNSServer.h>
 
 // Usage:
 // WifiPortal portal("app");
@@ -32,6 +34,8 @@ private:
     std::vector<String> _networks;
     bool _uploadDone = false;
     bool _serverStarted = false;
+    WebServer* _webServer;
+    DNSServer* _dnsServer;
 
     String generateSsidOptions();
     String generateInputList(std::vector<String> keys);

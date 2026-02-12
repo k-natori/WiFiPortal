@@ -89,9 +89,6 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 const IPAddress myAPIP(192, 168, 0, 1);
 const IPAddress subnet(255, 255, 255, 0);
 
-static WebServer server(80);
-static DNSServer dnsServer;
-
 // Generate device AP name based on MAC address
 String generateDeviceApName()
 {
@@ -157,6 +154,16 @@ WifiPortal::WifiPortal(String prefName, String apSsid, String apPass)
 // Destructor
 WifiPortal::~WifiPortal()
 {
+    if (_webServer != nullptr) {
+        _webServer->stop();
+        delete _webServer;
+        _webServer = nullptr;
+    }
+    if (_dnsServer != nullptr) {
+        _dnsServer->stop();
+        delete _dnsServer;
+        _dnsServer = nullptr;
+    }
 }
 
 // Start configuration portal
@@ -166,7 +173,7 @@ void WifiPortal::startConfigPortal(std::vector<String> keys)
     // Attempt to connect to previously saved WiFi credentials
     Serial.println("[WiFiPortal] Attempting to connect with saved credentials...");
     WiFi.mode(WIFI_STA);
-    if (tryConnectWiFi(30000))
+    if (tryConnectWiFi(15000))
     {
         Serial.println("[WiFiPortal] WiFi connected!");
         Serial.print("[WiFiPortal] IP: ");
@@ -195,13 +202,15 @@ void WifiPortal::startConfigPortal(std::vector<String> keys)
     Serial.printf("[WiFiPortal] AP started: %s / %s\n", apName.c_str(), _apPass);
     Serial.printf("[WiFiPortal] AP IP: %s\n", WiFi.softAPIP().toString().c_str());
 
-    dnsServer.start(53, "*", WiFi.softAPIP());
+    _webServer = new WebServer(80);
+    _dnsServer = new DNSServer();
+    _dnsServer->start(53, "*", WiFi.softAPIP());
     startWebServer();
 
     while (true)
     {
-        dnsServer.processNextRequest();
-        server.handleClient();
+        _dnsServer->processNextRequest();
+        _webServer->handleClient();
     }
 }
 
@@ -231,34 +240,34 @@ void WifiPortal::startWebServer()
     }
 
     // Redirect all unknown requests to the main page
-    server.onNotFound([this]()
+    _webServer->onNotFound([this]()
                       { handleNotFound(); });
 
     // Serve the main page
-    server.on("/", HTTP_GET, [this]()
+    _webServer->on("/", HTTP_GET, [this]()
               { handleRoot(); });
 
     // Handle form submission
-    server.on("/save", HTTP_POST, [this]()
+    _webServer->on("/save", HTTP_POST, [this]()
               { handleSubmit(); });
     // Handle file upload
-    server.on("/upload", HTTP_POST, [this]()
+    _webServer->on("/upload", HTTP_POST, [this]()
               {
         if (_uploadDone) {
-            server.sendHeader("Location", "/", true);
-            server.send(302, "text/plain", "");
+            _webServer->sendHeader("Location", "/", true);
+            _webServer->send(302, "text/plain", "");
             _uploadDone = false;
         } }, [this]()
               { handleUpload(); });
     // Handle file deletion
-    server.on("/delete", HTTP_POST, [this]()
+    _webServer->on("/delete", HTTP_POST, [this]()
               { handleDeleteFile(); });
 
     // Favicon request
-    server.on("/favicon.ico", HTTP_GET, []()
-              { server.send(204); });
+    _webServer->on("/favicon.ico", HTTP_GET, [this]()
+              { _webServer->send(204); });
 
-    server.begin();
+    _webServer->begin();
     _serverStarted = true;
     Serial.println("[WiFiPortal] WebServer started on port 80");
     Serial.printf("[WiFiPortal] WiFi Mode: %d, SSID: %s, IP: %s\n", WiFi.getMode(), WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
@@ -269,7 +278,7 @@ void WifiPortal::handleWebServer()
 {
     if (_serverStarted)
     {
-        server.handleClient();
+        _webServer->handleClient();
         // Uncomment for debugging client requests
         // Serial.println("[WiFiPortal] handleWebServer() called");
     }
@@ -280,7 +289,7 @@ void WifiPortal::stopWebServer()
 {
     if (_serverStarted)
     {
-        server.stop();
+        _webServer->stop();
         _serverStarted = false;
         Serial.println("[WiFiPortal] WebServer stopped");
     }
@@ -392,16 +401,16 @@ String WifiPortal::generateFileListHTML()
 // Handle 404 - Redirect to root
 void WifiPortal::handleNotFound()
 {
-    Serial.printf("[WiFiPortal] 404 %s - Client: %s\n", server.uri().c_str(), server.client().remoteIP().toString().c_str());
+    Serial.printf("[WiFiPortal] 404 %s - Client: %s\n", _webServer->uri().c_str(), _webServer->client().remoteIP().toString().c_str());
     String urlString = "/";
-    server.sendHeader("Location", urlString);
-    server.send(302, "text/plain", "Found.");
+    _webServer->sendHeader("Location", urlString);
+    _webServer->send(302, "text/plain", "Found.");
 }
 
 // Serve the main configuration page
 void WifiPortal::handleRoot()
 {
-    Serial.printf("[WiFiPortal] GET / - Client: %s\n", server.client().remoteIP().toString().c_str());
+    Serial.printf("[WiFiPortal] GET / - Client: %s\n", _webServer->client().remoteIP().toString().c_str());
     String page = INDEX_HTML;
     Preferences prefs;
     prefs.begin(_prefName.c_str(), true);
@@ -413,15 +422,15 @@ void WifiPortal::handleRoot()
     page.replace("{{INPUT_LIST}}", generateInputList(_keys));
     page.replace("{{FILE_LIST}}", generateFileListHTML());
 
-    server.send(200, "text/html", page);
+    _webServer->send(200, "text/html", page);
 }
 
 // Handle form submission and save preferences
 void WifiPortal::handleSubmit()
 {
     Serial.println("Form submitted.");
-    String wifi_ssid = server.arg("wifi_ssid");
-    String wifi_pass = server.arg("wifi_pass");
+    String wifi_ssid = _webServer->arg("wifi_ssid");
+    String wifi_pass = _webServer->arg("wifi_pass");
 
     Preferences prefs;
     prefs.begin(_prefName.c_str(), false);
@@ -430,13 +439,13 @@ void WifiPortal::handleSubmit()
     for (size_t i = 0; i < _keys.size(); i++)
     {
         String key = _keys[i];
-        prefs.putString(key.c_str(), server.arg(key));
+        prefs.putString(key.c_str(), _webServer->arg(key));
     }
     prefs.end();
 
-    server.send(200, "text/plain", "Saved! Rebooting...");
-    server.stop();
-    dnsServer.stop();
+    _webServer->send(200, "text/plain", "Saved! Rebooting...");
+    _webServer->stop();
+    _dnsServer->stop();
 
     // Reconnect to WiFi with new credentials
     WiFi.disconnect(true);
@@ -470,7 +479,7 @@ void WifiPortal::handleSubmit()
 void WifiPortal::handleUpload()
 {
     static File fsUploadFile;
-    HTTPUpload &upload = server.upload();
+    HTTPUpload &upload = _webServer->upload();
     if (upload.status == UPLOAD_FILE_START)
     {
         Serial.printf("UploadStart: %s\n", upload.filename.c_str());
@@ -519,12 +528,12 @@ void WifiPortal::handleDeleteFile()
             return;
         }
     }
-    String filename = server.arg("filename");
+    String filename = _webServer->arg("filename");
     if (LittleFS.exists("/" + filename))
     {
         LittleFS.remove("/" + filename);
         Serial.printf("Deleted file: %s\n", filename.c_str());
     }
-    server.sendHeader("Location", "/", true);
-    server.send(302, "text/plain", "");
+    _webServer->sendHeader("Location", "/", true);
+    _webServer->send(302, "text/plain", "");
 }
