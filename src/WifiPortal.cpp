@@ -99,7 +99,7 @@ String generateDeviceApName()
     return String(buf);
 }
 
-// Try to connect to WiFi with timeout
+// Try to connect to WiFi with timeout and up to 3 retries
 bool WifiPortal::tryConnectWiFi(unsigned long timeout_ms)
 {
     Preferences prefs;
@@ -108,30 +108,43 @@ bool WifiPortal::tryConnectWiFi(unsigned long timeout_ms)
     String wifi_pass = prefs.getString("wifi_pass", "");
     prefs.end();
 
-    unsigned long start = millis();
-    if (wifi_ssid.isEmpty() || wifi_pass.isEmpty())
+    static const int MAX_TRIES = 3;
+
+    for (int attempt = 1; attempt <= MAX_TRIES; attempt++)
     {
-        Serial.println("[WiFiPortal] No saved WiFi credentials, connecting to open network...");
-        WiFi.begin();
-    }
-    else
-    {
-        Serial.printf("[WiFiPortal] Connecting to SSID: %s\n", wifi_ssid.c_str());
-        WiFi.begin(wifi_ssid.c_str(), wifi_pass.c_str());
+        if (attempt > 1)
+        {
+            WiFi.disconnect(true);
+            delay(500);
+        }
+
+        if (wifi_ssid.isEmpty() || wifi_pass.isEmpty())
+        {
+            Serial.printf("[WiFiPortal] Attempt %d/%d: connecting to open network...\n", attempt, MAX_TRIES);
+            WiFi.begin();
+        }
+        else
+        {
+            Serial.printf("[WiFiPortal] Attempt %d/%d: connecting to SSID: %s\n", attempt, MAX_TRIES, wifi_ssid.c_str());
+            WiFi.begin(wifi_ssid.c_str(), wifi_pass.c_str());
+        }
+
+        unsigned long start = millis();
+        while (WiFi.status() != WL_CONNECTED && millis() - start < timeout_ms)
+        {
+            delay(300);
+            Serial.print(".");
+        }
+
+        if (WiFi.status() == WL_CONNECTED)
+        {
+            Serial.printf("\n[WiFiPortal] Connected! IP: %s\n", WiFi.localIP().toString().c_str());
+            return true;
+        }
+        Serial.printf("\n[WiFiPortal] Attempt %d/%d timed out after %lu ms\n", attempt, MAX_TRIES, timeout_ms);
     }
 
-    while (WiFi.status() != WL_CONNECTED && millis() - start < timeout_ms)
-    {
-        delay(300);
-        Serial.print(".");
-    }
-
-    if (WiFi.status() == WL_CONNECTED)
-    {
-        Serial.printf("\n[WiFiPortal] Connected! IP: %s\n", WiFi.localIP().toString().c_str());
-        return true;
-    }
-    Serial.printf("\n[WiFiPortal] Connection timeout after %lu ms\n", timeout_ms);
+    Serial.println("[WiFiPortal] All connection attempts failed.");
     return false;
 }
 
