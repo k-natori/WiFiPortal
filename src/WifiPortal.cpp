@@ -110,6 +110,8 @@ bool WifiPortal::tryConnectWiFi(unsigned long timeout_ms)
 
     static const int MAX_TRIES = 3;
 
+    delay(500);
+
     for (int attempt = 1; attempt <= MAX_TRIES; attempt++)
     {
         if (attempt > 1)
