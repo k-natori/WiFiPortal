@@ -34,8 +34,8 @@ private:
     std::vector<String> _networks;
     bool _uploadDone = false;
     bool _serverStarted = false;
-    WebServer* _webServer;
-    DNSServer* _dnsServer;
+    WebServer* _webServer = nullptr;
+    DNSServer* _dnsServer = nullptr;
 
     String generateSsidOptions();
     String generateInputList(std::vector<String> keys);

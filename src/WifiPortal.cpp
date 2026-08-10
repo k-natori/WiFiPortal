@@ -240,6 +240,13 @@ void WifiPortal::startWebServer()
 
     Serial.println("[WiFiPortal] Starting WebServer...");
 
+    // Allocate the server lazily: startConfigPortal() returns early without
+    // allocating when the saved credentials connect successfully.
+    if (_webServer == nullptr)
+    {
+        _webServer = new WebServer(80);
+    }
+
     // Scan for networks if not already done
     if (WiFi.getMode() != WIFI_AP && _networks.size() == 0)
     {
@@ -460,7 +467,12 @@ void WifiPortal::handleSubmit()
 
     _webServer->send(200, "text/plain", "Saved! Rebooting...");
     _webServer->stop();
-    _dnsServer->stop();
+    _serverStarted = false;
+    if (_dnsServer != nullptr)
+    {
+        // No DNS server exists when the portal was started in STA mode.
+        _dnsServer->stop();
+    }
 
     // Reconnect to WiFi with new credentials
     WiFi.disconnect(true);
